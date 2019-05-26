@@ -1,48 +1,37 @@
 package main
 
-// Impl' of Ukkonenes algo to construct suffix tree in linear time
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
+
+var WordSegmentationRegex = `[\pL\p{Mc}\p{Mn}']+`
 
 type SuffixNode struct {
 	Id          int
 	Children    []*SuffixNode
-	StartIndex  int
-	EndIndex    int
-	Value       []byte
+	Value       byte
 	Parent      *SuffixNode
 	nodeCounter int
 	cursorIndex int
 	activeChild *SuffixNode
+	IsWordEnd   bool
 }
 
 func (node *SuffixNode) SetId(id int) {
 	node.Id = id
 }
 
-func (node *SuffixNode) SetValue(value []byte) {
+func (node *SuffixNode) SetValue(value byte) {
 	node.Value = value
 }
 
 func (node *SuffixNode) AddChild(newNode *SuffixNode) {
 	node.Children = append(node.Children, newNode)
+	node.nodeCounter++
 }
 
-// Only increase end index for leaves.
-func (node *SuffixNode) IncrementEndIndex() {
-	if len(node.Children) > 0 {
-		for _, branch := range node.Children {
-			branch.IncrementEndIndex()
-		}
-	} else {
-		node.EndIndex++
-	}
-}
-func (node *SuffixNode) InsertChar(char byte) {
-	node.Value = append(node.Value, char)
-}
 func (node *SuffixNode) GetNewNodeId() int {
 	var newId int
 	if node.Parent == nil { //this is the root
@@ -54,6 +43,7 @@ func (node *SuffixNode) GetNewNodeId() int {
 	return newId
 }
 
+//
 func (node SuffixNode) String() string {
 	sb := strings.Builder{}
 	for _, branch := range node.Children {
@@ -73,101 +63,110 @@ type SuffixTree struct {
 	currentEdge   *SuffixNode
 }
 
-func (node *SuffixNode) SplitNode(activeIndex, currentIndex int) {
-	node.AddChild(&SuffixNode{
-		Id:         node.Id,
-		StartIndex: activeIndex + 1,
-		EndIndex:   currentIndex + 1,
-	})
+func (tree *SuffixTree) WalkTree() *SuffixNode {
 
-	node.EndIndex = activeIndex
-	node.SetId(node.GetNewNodeId())
-
-	node.AddChild(&SuffixNode{
-		Id:         node.GetNewNodeId(),
-		StartIndex: currentIndex,
-		EndIndex:   currentIndex + 1,
-	})
+	return nil
 }
 
-func FindInsertionBranch(startNode *SuffixNode, currentIndex int, currentWord []byte) (*SuffixNode, bool) {
-	for _, cursorNode := range startNode.Children {
-		if currentWord[currentIndex] == currentWord[cursorNode.StartIndex] {
-			return cursorNode, true
+func FindInsertionBranch(rootNode *SuffixNode, word []byte) (cursorNode *SuffixNode, index int, isFound bool) {
+	var char byte
+	cursorNode = rootNode
+	for index, char = range word {
+		isFound, cursorNode = queryChildren(cursorNode, char)
+		if isFound == false {
+			//We found the leaf node where the suffix should be inserted.
+			break
 		}
 	}
-	return nil, false
+	return cursorNode, index, isFound
+}
+
+func (tree *SuffixTree) LookupWord(word []byte) (*SuffixNode, int, int, bool) {
+	return LookupWord(&tree.root, word)
+}
+
+func LookupWord(rootNode *SuffixNode, word []byte) (*SuffixNode, int, int, bool) {
+	for startIndex := 0; startIndex < len(word); startIndex++ {
+		cursorWord := word[startIndex:]
+		node, index, isFound := FindInsertionBranch(rootNode, cursorWord)
+		if isFound && node.IsWordEnd {
+			return node, startIndex, startIndex + index, true
+		}
+	}
+	return nil, -1, -1, false
+}
+
+func queryChildren(cursorNode *SuffixNode, char byte) (bool, *SuffixNode) {
+	for _, node := range cursorNode.Children {
+		if node.Value == char {
+			cursorNode = node
+			return true, cursorNode
+		}
+	}
+	return false, cursorNode
+}
+
+func SegmentString(word []byte) [][]byte {
+	reg := regexp.MustCompile(WordSegmentationRegex)
+	return reg.FindAll(word, -1)
+}
+
+//Inserts several words - if common separators are found
+func (tree *SuffixTree) InsertString(word []byte) {
+	for _, segmentedWord := range SegmentString(word) {
+		tree.InsertWord(segmentedWord)
+	}
 }
 
 func (tree *SuffixTree) InsertWord(word []byte) {
 	node := &tree.root
-	for i := 0; i < len(word); i++ {
-		isSuitablePrefixNodeFound := false
-		if tree.currentEdge != nil {
-			if word[i] == word[tree.currentEdge.StartIndex+tree.activeLength] {
-				isSuitablePrefixNodeFound = true
-				tree.activeLength++
-			}
-			tree.reminder++
-		} else {
-			var cursorNode *SuffixNode
-			cursorNode, isSuitablePrefixNodeFound = FindInsertionBranch(tree.activeNode, i, word)
-			if isSuitablePrefixNodeFound {
-				tree.currentEdge = cursorNode
-				tree.currentSuffix = word[i]
-				tree.activeLength++
-				tree.reminder++
-				continue
-			}
-			if !isSuitablePrefixNodeFound {
+	for wordIndex := 0; wordIndex < len(word); {
+		cursorWord := word[wordIndex:]
+		insertionNode, index, isFound := FindInsertionBranch(node, cursorWord)
+		if !isFound {
+			//Now we have the tip of the insertion edge, and we know that the word doesn't exist
+			cursorNode := insertionNode
+			for _, char := range cursorWord[index:] {
 				activeNode := &SuffixNode{
-					Id:         node.GetNewNodeId(),
-					StartIndex: i,
-					EndIndex:   i + 1,
+					Id:        node.GetNewNodeId(),
+					Value:     char,
+					IsWordEnd: false,
+					Parent:    cursorNode,
 				}
-				node.AddChild(activeNode)
-				fmt.Printf("new node #%v - \"%v\" \n", activeNode.Id, word[i:i+1])
+				cursorNode.AddChild(activeNode)
+				cursorNode = activeNode
 			}
+			cursorNode.IsWordEnd = true
+			wordIndex += index
+		} else {
+			wordIndex++
 		}
-
-		if tree.currentEdge != nil && !isSuitablePrefixNodeFound {
-			for tree.activeLength > 0 {
-
-				tree.activeNode.activeChild.SplitNode(tree.activeIndex, i+1)
-				tree.reminder--
-				tree.activeLength--
-				tree.currentSuffix = word[i-tree.activeLength]
-				tree.activeNode.activeChild = nil
-			}
-		}
-
-		// Create new suffix branch if we don't have branch for this suffix
-
-		for _, cursorNode := range root.Children {
-			cursorNode.IncrementEndIndex()
-		}
-
 	}
-}
 
-func (tree SuffixTree) String() string {
-	return fmt.Sprintln(tree.root)
 }
 
 func NewSuffixTree() *SuffixTree {
 	newNode := SuffixNode{}
 	newNode.SetId(newNode.GetNewNodeId())
 	return &SuffixTree{
-		root:          newNode,
-		activeNode:    &newNode,
-		reminder:      1,
-		activeLength:  0,
-		currentSuffix: byte(nil),
+		root:       newNode,
+		activeNode: &newNode,
 	}
 }
 
 func main() {
 	tree := NewSuffixTree()
-	tree.InsertWord([]byte("abcabxabcd"))
-	fmt.Println(tree)
+	tree.InsertString([]byte("cgi"))
+	tree.InsertString([]byte("rtcgi"))
+	tree.InsertString([]byte("cgigi"))
+	testStrings := []string{"cgi", "xcgi", "cgi-bin"}
+	for _, testString := range testStrings {
+		word, startIndex, endIndex, isFound := tree.LookupWord([]byte(testString))
+		if isFound {
+			fmt.Printf("Found match of substring [%v], from string [%v]; in node [%v]\n", testString[startIndex:endIndex+1], testString, word.Id)
+		} else {
+			fmt.Printf("Didn't find match for string - [%v]\n", testString)
+		}
+
+	}
 }
