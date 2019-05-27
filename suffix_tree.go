@@ -1,21 +1,16 @@
-package main
+package SuffixTree
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 )
-
-var WordSegmentationRegex = `[\pL\p{Mc}\p{Mn}']+`
 
 type SuffixNode struct {
 	Id          int
 	Children    []*SuffixNode
 	Value       byte
 	Parent      *SuffixNode
-	nodeCounter int
-	cursorIndex int
-	activeChild *SuffixNode
+	NodeCounter int
 	IsWordEnd   bool
 }
 
@@ -23,20 +18,16 @@ func (node *SuffixNode) SetId(id int) {
 	node.Id = id
 }
 
-func (node *SuffixNode) SetValue(value byte) {
-	node.Value = value
-}
-
 func (node *SuffixNode) AddChild(newNode *SuffixNode) {
 	node.Children = append(node.Children, newNode)
-	node.nodeCounter++
+	node.NodeCounter++
 }
 
 func (node *SuffixNode) GetNewNodeId() int {
 	var newId int
-	if node.Parent == nil { //this is the root
-		newId = node.nodeCounter
-		node.nodeCounter++
+	if node.Parent == nil { //this is the Root
+		newId = node.NodeCounter
+		node.NodeCounter++
 	} else {
 		newId = node.Parent.GetNewNodeId()
 	}
@@ -53,19 +44,7 @@ func (node SuffixNode) String() string {
 }
 
 type SuffixTree struct {
-	root          SuffixNode
-	activeNode    *SuffixNode
-	activeChild   int
-	activeIndex   int
-	activeLength  int
-	reminder      int
-	currentSuffix byte
-	currentEdge   *SuffixNode
-}
-
-func (tree *SuffixTree) WalkTree() *SuffixNode {
-
-	return nil
+	Root SuffixNode
 }
 
 func FindInsertionBranch(rootNode *SuffixNode, word []byte) (cursorNode *SuffixNode, index int, isFound bool) {
@@ -87,16 +66,12 @@ type Match struct {
 	EndIndex   int
 }
 
-func (tree *SuffixTree) LookupString(searchString []byte) (matches []Match, isFound bool) {
-	for _, word := range SegmentString(searchString) {
-		node, startIndex, endIndex, isFound := LookupWord(&tree.root, word)
-		if isFound {
-			matches = append(matches, Match{
-				node, startIndex, endIndex,
-			})
-		}
+func (tree *SuffixTree) LookupString(searchString []byte) (Match, bool) {
+	node, startIndex, endIndex, isFound := LookupWord(&tree.Root, searchString)
+	matches := Match{
+		node, startIndex, endIndex,
 	}
-	return matches, len(matches) > 0
+	return matches, isFound
 
 }
 
@@ -122,20 +97,8 @@ func queryChildren(cursorNode *SuffixNode, char byte) (bool, *SuffixNode) {
 	return false, cursorNode
 }
 
-func SegmentString(word []byte) [][]byte {
-	reg := regexp.MustCompile(WordSegmentationRegex)
-	return reg.FindAll(word, -1)
-}
-
-//Inserts several words - if common separators are found
-func (tree *SuffixTree) InsertString(word []byte) {
-	for _, segmentedWord := range SegmentString(word) {
-		tree.InsertWord(segmentedWord)
-	}
-}
-
 func (tree *SuffixTree) InsertWord(word []byte) {
-	node := &tree.root
+	node := &tree.Root
 	for wordIndex := 0; wordIndex < len(word); {
 		cursorWord := word[wordIndex:]
 		insertionNode, index, isFound := FindInsertionBranch(node, cursorWord)
@@ -143,14 +106,14 @@ func (tree *SuffixTree) InsertWord(word []byte) {
 			//Now we have the tip of the insertion edge, and we know that the word doesn't exist
 			cursorNode := insertionNode
 			for _, char := range cursorWord[index:] {
-				activeNode := &SuffixNode{
+				newNode := &SuffixNode{
 					Id:        node.GetNewNodeId(),
 					Value:     char,
 					IsWordEnd: false,
 					Parent:    cursorNode,
 				}
-				cursorNode.AddChild(activeNode)
-				cursorNode = activeNode
+				cursorNode.AddChild(newNode)
+				cursorNode = newNode
 			}
 			cursorNode.IsWordEnd = true
 			wordIndex += index
@@ -165,53 +128,6 @@ func NewSuffixTree() *SuffixTree {
 	newNode := SuffixNode{}
 	newNode.SetId(newNode.GetNewNodeId())
 	return &SuffixTree{
-		root:       newNode,
-		activeNode: &newNode,
+		Root: newNode,
 	}
-}
-
-func printChildren(t *SuffixNode, pre string) {
-	for _, cursorNode := range t.Children {
-		children := cursorNode.Children
-		if len(children) == 0 {
-			fmt.Println("╴", string(cursorNode.Value))
-			return
-		}
-		fmt.Println("┐", string(cursorNode.Value))
-		last := len(children) - 1
-		for _, ch := range children[:last] {
-			fmt.Print(pre, "├─")
-			printChildren(ch, pre+"│ ")
-		}
-		fmt.Print(pre, "└─")
-		printChildren(children[last], pre+"  ")
-	}
-}
-
-func vis(t *SuffixNode) {
-	if len(t.Children) == 0 {
-		fmt.Println("<empty tree>")
-		return
-	}
-	printChildren(t, "")
-}
-
-func main() {
-	tree := NewSuffixTree()
-	tree.InsertString([]byte("boris tries to take over the world"))
-	tree.InsertString([]byte("yafim kazak tries too"))
-	tree.InsertString([]byte("Kobi has already succedd"))
-	testStrings := []string{"cgi", "xcgi", "cgi-bin"}
-	for _, testString := range testStrings {
-		matches, isFound := tree.LookupString([]byte(testString))
-		if isFound {
-			for _, match := range matches {
-				fmt.Printf("Found match of substring [%v], from string [%v]; in Node [%v]\n", testString[match.StartIndex:match.EndIndex+1], testString, match.Node.Id)
-			}
-		} else {
-			fmt.Printf("Didn't find match for string - [%v]\n", testString)
-		}
-
-	}
-	vis(&tree.root)
 }
