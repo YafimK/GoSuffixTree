@@ -1,0 +1,136 @@
+package SuffixTree_test
+
+import (
+    . "github.com/onsi/ginkgo"
+    "github.com/stretchr/testify/assert"
+    "github.com/stretchr/testify/require"
+    "github.com/YafimK/GoSuffixTree"
+)
+
+var _ = Describe("SuffixTree", func() {
+    t := GinkgoT()
+    Context("basic", func() {
+        It("fail to create the default ", func() {
+            actual := SuffixTree.NewSuffixTree()
+            expected := &SuffixTree.SuffixTree{
+                Root: SuffixTree.SuffixNode{Id: 0},
+                Size: 1,
+            }
+            expected.Root.Id = 0
+            require.Equal(t, expected, actual)
+        })
+    })
+    Context("Insertion", func() {
+        It("insert one word ", func() {
+            tree := SuffixTree.NewSuffixTree()
+            testString := "cgi-bin"
+            tree.InsertWord([]byte(testString))
+            assert.Equal(t, tree.Root.Children[0].Value, testString[0])
+            assert.Equal(t, tree.Root.Children[0].Children[0].Value, testString[1])
+            assert.Equal(t, tree.Root.Children[0].Children[0].Children[0].Value, testString[2])
+            assert.True(t, tree.Root.Children[0].Children[0].Children[0].Children[0].Children[0].Children[0].Children[0].IsWordEnd)
+            assert.Equal(t, tree.Root.Children[1].Value, testString[1])
+            assert.Equal(t, tree.Root.Children[1].Children[0].Value, testString[2])
+            assert.Equal(t, tree.Root.Children[2].Value, testString[2])
+            assert.Equal(t, tree.Root.Children[3].Value, testString[3])
+            assert.Equal(t, tree.Root.Children[3].Children[0].Value, testString[4])
+            assert.Equal(t, tree.Root.Children[3].Children[0].Children[0].Value, testString[5])
+        })
+    })
+    Context("Lookup", func() {
+        It("Lookup one word", func() {
+            tree := SuffixTree.NewSuffixTree()
+            testString := "cgi"
+            tree.InsertWord([]byte(testString))
+            expected := SuffixTree.Match{
+                Node: tree.Root.Children[0].Children[0].Children[0], EndIndex: 3,
+            }
+
+            actualMatches, isFound := tree.LookupString("cgi")
+
+            assert.True(t, isFound)
+            assert.Equal(t, expected, actualMatches)
+        })
+        It("Insert 3 full words only", func() {
+            tree := SuffixTree.NewSuffixTree()
+            testStrings := []string{"me", "cgime", "mebuy"}
+            for _, word := range testStrings {
+                tree.InsertFullWord([]byte(word))
+            }
+            expected := &SuffixTree.Match{
+               Node: tree.Root.Children[0].Children[0].Children[0].Children[0].Children[0], EndIndex: 5,
+            }
+
+            require.True(t, tree.Root.Children[0].Children[0].IsWordEnd)
+            actualMatches, isFound := tree.LookupFullString("mebuy")
+            assert.True(t, isFound)
+            assert.Equal(t, expected, actualMatches)
+            actualMatches, isFound = tree.LookupFullString("cgi")
+            assert.False(t, isFound)
+            assert.Nil(t, actualMatches)
+        })
+        It("Lookup one full word", func() {
+            tree := SuffixTree.NewSuffixTree()
+            testStrings := []string{"bin", "cgi-bin"}
+            for _, word := range testStrings {
+                tree.InsertWord([]byte(word))
+            }
+            expected := new(SuffixTree.Match)
+            actualMatches, isFound := tree.LookupFullString("cgi")
+            assert.False(t, isFound)
+            assert.Nil(t, actualMatches)
+
+            expected = &SuffixTree.Match{
+                Node: tree.Root.Children[0].Children[0].Children[0], EndIndex: 3,}
+
+            actualMatches, isFound = tree.LookupFullString("bin")
+            assert.True(t, isFound)
+            assert.Equal(t, actualMatches.StartIndex, 0)
+            assert.Equal(t, actualMatches.EndIndex, 3)
+            assert.Equal(t, expected, actualMatches)
+        })
+        It("Lookup one word with several inputs", func() {
+            tree := SuffixTree.NewSuffixTree()
+            testStrings := []string{"cgi", "bin", "cgi-bin"}
+            for _, word := range testStrings {
+                tree.InsertWord([]byte(word))
+            }
+            expected := SuffixTree.Match{
+                Node: tree.Root.Children[0].Children[0].Children[0], EndIndex: 3,
+            }
+            actualMatches, isFound := tree.LookupString("cgi")
+            require.True(t, isFound)
+            assert.Equal(t, expected, actualMatches)
+        })
+        It("Lookup one word with several matches", func() {
+            tree := SuffixTree.NewSuffixTree()
+            testStrings := []string{"abcxabcw"}
+            for _, word := range testStrings {
+                tree.InsertWord([]byte(word))
+            }
+            expected := []SuffixTree.Match{
+                {Node: tree.Root.Children[0].Children[0].Children[0], EndIndex: 3,},
+                {Node: tree.Root.Children[1].Children[0], StartIndex: 1, EndIndex: 3,},
+                {Node: tree.Root.Children[2], StartIndex: 2, EndIndex: 3,},
+            }
+            actualMatches, isFound := tree.LookupSubString("abc")
+            require.True(t, isFound)
+            require.Len(t, actualMatches, 3)
+            assert.Equal(t, expected, actualMatches)
+        })
+        It("Lookup one word with several matches", func() {
+            tree := SuffixTree.NewSuffixTree()
+            testStrings := []string{"abcxabcw"}
+            for _, word := range testStrings {
+                tree.InsertWord([]byte(word))
+            }
+            expected := []SuffixTree.Match{
+                {Node: tree.Root.Children[0].Children[0].Children[0], EndIndex: 3,},
+            }
+            actualMatches, isFound := tree.LookupMaxContinuousSubStrings("abc")
+            require.True(t, isFound)
+            require.Len(t, actualMatches, 1)
+            assert.Equal(t, expected, actualMatches)
+        })
+    })
+})
